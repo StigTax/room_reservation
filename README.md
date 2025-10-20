@@ -1,21 +1,30 @@
 # API бронирования переговорок
 
-Асинхронный сервис на FastAPI для управления переговорными комнатами и будущими бронированиями. Стек минималистичный: Pydantic для валидации, асинхронный SQLAlchemy 1.4 для доступа к БД и Alembic для миграций.
+Асинхронный сервис на FastAPI для управления переговорными комнатами и бронированиями. Проект предоставляет REST API с аутентификацией по JWT, валидацией входных данных и проверкой пересечений во времени.
+
+## Возможности
+
+- регистрация и аутентификация пользователей через FastAPI Users (JWT-токены);
+- автоматическое создание первого суперпользователя при старте приложения;
+- CRUD-операции с переговорными комнатами (создание и изменение доступны только суперпользователям);
+- создание, изменение и удаление собственных бронирований с проверкой пересечений во времени;
+- просмотр всех переговорных комнат и будущих бронирований по комнате;
+- получение списка собственных бронирований и, для суперпользователей, полного списка бронирований.
 
 ## Технологический стек
 
 - Python 3.10+
-- FastAPI и Pydantic
-- SQLAlchemy (async engine)
-- Alembic и aiosqlite
-- Uvicorn (ASGI-сервер) и watchgod для горячей перезагрузки
+- FastAPI, Pydantic, FastAPI Users
+- SQLAlchemy 1.4 (async engine) и aiosqlite
+- Alembic для миграций
+- Uvicorn и watchgod для запуска и hot reload
 - python-dotenv для работы с переменными окружения
 
-Полный список версий — в `requirements.txt`.
+Полный список зависимостей доступен в `requirements.txt`.
 
-## Быстрый старт
+## Подготовка окружения
 
-1. **Клонирование и создание окружения**
+1. **Создать и активировать виртуальное окружение**
 
    ```bash
    python -m venv venv
@@ -23,24 +32,34 @@
    pip install -U pip
    ```
 
-2. **Установка зависимостей**
+2. **Установить зависимости**
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Настройка переменных окружения**
+3. **Настроить переменные окружения**
 
-   - скопируйте `.env.example` в `.env` (создайте шаблон, если его нет);
-   - задайте `DATABASE_URL`, например `sqlite+aiosqlite:///fastapi.db`.
+   Скопируйте `.env` или создайте новый файл и задайте параметры:
 
-4. **Запуск миграций**
+   ```dotenv
+   APP_TITLE=API бронирования переговорок
+   APP_DISCRIPTION=Описание сервиса (переменная используется в FastAPI)
+   DATABASE_URL=sqlite+aiosqlite:///./fastapi.db
+   SECRET=случайная_строка_для_JWT
+   FIRST_SUPERUSER_EMAIL=admin@example.com
+   FIRST_SUPERUSER_PASSWORD=надежный_пароль
+   ```
+
+   При запуске приложения суперпользователь будет создан автоматически, если заданы `FIRST_SUPERUSER_EMAIL` и `FIRST_SUPERUSER_PASSWORD`.
+
+4. **Применить миграции**
 
    ```bash
    alembic upgrade head
    ```
 
-5. **Запуск приложения**
+5. **Запустить приложение**
 
    ```bash
    uvicorn app.main:app --reload
@@ -50,59 +69,71 @@
 
 ## Полезные команды
 
-- `alembic revision --autogenerate -m "message"` — создать миграцию из моделей
+- `alembic revision --autogenerate -m "message"` — сгенерировать миграцию на основе моделей
 - `alembic upgrade head` — применить последние миграции
 - `alembic downgrade -1` — откатить последнюю миграцию
 
-## Доступные эндпоинты
+## Основные эндпоинты
 
-- `POST /meeting_rooms/` — создание переговорной комнаты
-- `GET /meeting_rooms/` — получение списка переговорных
-- `PATCH /meeting_rooms/{meeting_room_id}` — частичное обновление данных
-- `DELETE /meeting_rooms/{meeting_room_id}` — удаление переговорной
+- `POST /auth/register` — регистрация пользователя  
+- `POST /auth/jwt/login` / `POST /auth/jwt/logout` — получение и отзыв JWT  
+- `GET /users/me` — профиль текущего пользователя  
+- `GET /users/{id}` — получение пользователя (для суперпользователей)
+- `POST /meeting_rooms/` — создать переговорную (суперпользователь)  
+- `GET /meeting_rooms/` — список переговорных комнат  
+- `PATCH /meeting_rooms/{meeting_room_id}` — обновить данные комнаты (суперпользователь)  
+- `DELETE /meeting_rooms/{meeting_room_id}` — удалить комнату (суперпользователь)  
+- `GET /meeting_rooms/{meeting_room_id}/reservations` — будущие бронирования выбранной комнаты  
+- `POST /reservations/` — создать бронирование (текущий пользователь)  
+- `GET /reservations/` — все бронирования (суперпользователь)  
+- `PATCH /reservations/{reservation_id}` — изменить собственное бронирование  
+- `DELETE /reservations/{reservation_id}` — удалить собственное бронирование  
+- `GET /reservations/my_reservations` — все бронирования текущего пользователя
+
+## Роли и доступ
+
+- **Обычный пользователь** может регистрироваться, авторизовываться, создавать и управлять только собственными бронированиями, просматривать список переговорных и собственные бронирования.
+- **Суперпользователь** дополнительно управляет переговорами, видит все бронирования и может редактировать их.
 
 ## Структура проекта
 
 ```text
 .
-├── alembic/                 # Конфигурация и версии миграций
+├── alembic/                 # Конфигурация Alembic и файлы миграций
 │   └── versions/
 ├── app/
-│   ├── api/                 # Маршруты FastAPI
-│   ├── core/                # Настройки, база и инициализация БД
-│   ├── crud/                # CRUD-операции
+│   ├── api/                 # Роуты FastAPI и валидаторы
+│   ├── core/                # Настройки, подключение БД, управление пользователями
+│   ├── crud/                # Универсальные CRUD-классы и логика доступа к данным
 │   ├── models/              # SQLAlchemy-модели
-│   └── schemas/             # Pydantic-схемы
-├── fastapi.db               # SQLite-БД для разработки
+│   └── schemas/             # Pydantic-схемы запросов и ответов
+├── fastapi.db               # SQLite-БД для разработки (если используется)
 ├── README.md
 ├── requirements.txt
 └── alembic.ini
 ```
 
-## Диаграмма
-
-Рекомендуемый вариант — диаграмма сущностей (ER), показывающая связь между переговорками и бронированиями: одна переговорка может иметь множество бронирований, но каждое бронирование относится к одной конкретной переговорке. Такой набросок можно оформить прямо в README с помощью Mermaid:
+## Диаграмма сущностей
 
 ```mermaid
 erDiagram
-    MEETING_ROOM {
+    MEETINGROOM {
         int id
         string name
         string description
     }
     RESERVATION {
         int id
-        datetime date_from
-        datetime date_to
-        string comments
+        datetime from_reserve
+        datetime to_reserve
+        int meetingroom_id
+        int user_id
     }
-    MEETING_ROOM ||--o{ RESERVATION : "has many"
+    USER {
+        int id
+        string email
+        bool is_superuser
+    }
+    MEETINGROOM ||--o{ RESERVATION : "has many"
+    USER ||--o{ RESERVATION : "creates"
 ```
-
-## ToDo
-
-- [ ] Завершить CRUD-логику для бронирований (`app/crud/reservation.py`)
-- [ ] Реализовать эндпоинты бронирований (`app/api/reservation.py`)
-- [ ] Описать модели и схемы Pydantic для бронирований
-- [ ] Добавить проверку конфликтов бронирований
-- [ ] Расширить README разделами о деплое и архитектуре после внедрения функционала
